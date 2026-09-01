@@ -4,5 +4,6 @@
   "pass": "your-password",
   "topic": "/wlw_szxn_pdx/#",
   "imeiFilter": null,
-  "port": 3010
+  "port": 3010,
+  "_envNote": "Coolify/Docker 部署时可不建本文件，改用环境变量：MQTT_BROKER / MQTT_USER / MQTT_PASS / MQTT_TOPIC / MQTT_IMEI / PORT，环境变量优先于本文件"
 }

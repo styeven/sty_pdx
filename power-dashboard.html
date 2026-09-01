@@ -657,7 +657,10 @@ function createGaugeSVG(id, color, val, max){
 function genEmtMsg(g){
   const noise = () => (Math.random()-0.5)*2;
   const VA = Math.round((220 + noise()*4 + g.id*1.5)*10)/10;   // 精度0.1
-  const IA = Math.round((g.baseIA*(1+noise()*0.04) + (Math.random()-0.5)*3)*100)/100; // 精度0.01
+  // 【2026-09-01 修改】电流钳位非负：随机抖动在轻载回路(0.3A)上会产生负电流，
+  //   原因：正常电压/电流均为正数，负值会导致 kW/kVar 同时为负，测试数据不允许出现负数
+  const IAraw = g.baseIA*(1+noise()*0.04) + (Math.random()-0.5)*3;
+  const IA = Math.round(Math.max(0, IAraw)*100)/100;           // 精度0.01，恒 >= 0
   const TPF = Math.round((0.93 + (Math.random()-0.5)*0.06)*1000)/1000; // 精度0.001
   const HZ = Math.round((50.00 + (Math.random()-0.5)*0.10)*100)/100;   // 精度0.01
   const kW = Math.round((VA*IA*TPF/1000)*1000)/1000;           // 精度0.001

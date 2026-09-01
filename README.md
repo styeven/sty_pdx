@@ -36,7 +36,9 @@
      "port": 3010
    }
    ```
-   > `config.local.json` 已被 `.gitignore` 忽略，不会提交到仓库，请勿把真实凭据写入其他文件。
+   > `config.local.json` 已被 SVN 的 `svn:ignore` 忽略，不会提交到仓库，请勿把真实凭据写入其他文件。
+   > **Coolify / Docker 部署**：容器里不建本文件，改用环境变量注入（环境变量优先于本文件）：
+   > `MQTT_BROKER`、`MQTT_USER`、`MQTT_PASS`、`MQTT_TOPIC`、`MQTT_IMEI`、`PORT`。
 3. 启动桥接服务：
    ```bash
    node bridge-server.js
@@ -59,12 +61,12 @@ node -v   # 确认输出 v22.x
 **2. 获取代码（二选一）**
 
 ```bash
-# 方式 A：从 GitHub 拉取（公开仓库）
-git clone https://github.com/styeven/sty_pdx.git
+# 方式 A：从 SVN 仓库 checkout
+svn checkout svn://wzysvn.styeven.top/kylin/group/web/branches/zhengzexiang/sty_pdx sty_pdx
 cd sty_pdx
 
 # 方式 B：本机打包上传（scp 到服务器后解压）
-#   zip -r sty_pdx.zip 除 node_modules/.git/data-history.jsonl/config.local.json 外的全部文件
+#   zip -r sty_pdx.zip 除 node_modules/.svn/data-history.jsonl/config.local.json 外的全部文件
 ```
 
 **3. 创建本地配置（clone 后没有 config.local.json，必须手动创建）**
@@ -74,7 +76,7 @@ cp config.example.json config.local.json
 nano config.local.json   # 填入厂商 MQTT 真实地址/账号/密码
 ```
 
-> `config.local.json` 被 git 忽略，不会从仓库下载；`data-history.jsonl` 同样不入库，不带上则历史从零开始记录。
+> `config.local.json` 被 SVN 忽略，不会从仓库下载；`data-history.jsonl` 同样不入库，不带上则历史从零开始记录。
 
 **4. 安装依赖并启动**
 
@@ -106,7 +108,7 @@ sudo ufw allow 3010/tcp
 **7. 更新代码**
 
 ```bash
-git pull
+svn update
 pm2 restart pdx-bridge
 ```
 
@@ -152,13 +154,11 @@ node -v    # 应输出 v18.x
 **2. 获取代码**
 
 ```bash
-sudo yum install -y git
-git clone https://github.com/styeven/sty_pdx.git && cd sty_pdx
+sudo yum install -y subversion
+svn checkout svn://wzysvn.styeven.top/kylin/group/web/branches/zhengzexiang/sty_pdx sty_pdx && cd sty_pdx
 
-# 备选：若老版 git 报 TLS/证书错误，改用 zip 下载
-# sudo yum install -y unzip
-# curl -fsSL -o sty_pdx.zip https://github.com/styeven/sty_pdx/archive/refs/heads/main.zip
-# unzip sty_pdx.zip && cd sty_pdx-main
+# 备选：若 SVN 连接不稳定，改用 zip 方式（本机打包上传后解压）
+#   zip 打包时排除 node_modules/.svn/data-history.jsonl/config.local.json
 ```
 
 **3. 配置凭据**
@@ -196,7 +196,7 @@ pm2 startup    # 按提示执行输出的那行命令，实现开机自启
 **7. 更新代码**
 
 ```bash
-git pull && pm2 restart pdx-bridge
+svn update && pm2 restart pdx-bridge
 ```
 
 ## 远程控制
@@ -221,7 +221,7 @@ power-dashboard.html  看板前端（静态托管）
 package.json          依赖声明（npm install 用）
 ecosystem.config.js   pm2 进程守护配置（服务器部署用）
 config.example.json   配置模板（可入库）
-config.local.json     本机真实配置（git 忽略，不入库）
-data-history.jsonl    历史数据落盘（git 忽略，不入库）
+config.local.json     本机真实配置（svn:ignore 忽略，不入库）
+data-history.jsonl    历史数据落盘（svn:ignore 忽略，不入库）
 subscribe-test.js / probe-mqtt.js / screenshot-*.js  调试与验证脚本
 ```

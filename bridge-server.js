@@ -24,21 +24,25 @@ const fs = require('fs');
 const path = require('path');
 
 // ---------- 配置区 ----------
-// 【2026-09-01 修改】MQTT 服务器/账号/密码从 config.local.json 读取（该文件被 .gitignore 忽略，不入 git 仓库）
-//   原因：项目准备公开提交 GitHub，厂商服务器地址与账号密码属客户敏感信息，严禁进 git 历史
-//   使用：本机真实配置写 config.local.json（已创建，含真实凭据）；模板见 config.example.json（可入库）
-//        读取失败时回退到内置默认值（仅本地演示用，不含任何真实凭据）
+// 【2026-09-01 修改】配置来源支持「环境变量优先 + config.local.json 回退」
+//   原因：部署到 Coolify（Docker 容器）时没有 config.local.json，MQTT 凭据必须通过容器环境变量注入；
+//        本地开发仍写 config.local.json（被 svn:ignore/.gitignore 忽略，不入仓库），两者互不影响。
+//   使用：环境变量名 MQTT_BROKER / MQTT_USER / MQTT_PASS / MQTT_TOPIC / MQTT_IMEI / PORT；
+//        未设环境变量时回退读取 config.local.json；再失败用内置默认值（仅本地演示，不含真实凭据）。
+// 【2026-09-01 修改】config.local.json 不入 git 仓库（原 git 提交时代遗留说明，现仓库为 SVN，仍忽略）
+//   原因：厂商服务器地址与账号密码属客户敏感信息，严禁进版本库历史
 const CONFIG_FILE = path.join(__dirname, 'config.local.json');
 let config = {};
 try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); }
 catch (e) { console.warn(`[${ts()}] ⚠️ 未找到 ${path.basename(CONFIG_FILE)}，使用内置默认配置（仅本地演示）`); }
 
-const PORT = parseInt(process.argv[2] || config.port || '3010', 10);
-const BROKER = config.broker || 'mqtt://127.0.0.1:1883';   // 默认本地演示 broker，不内置客户服务器地址
-const USER = config.user || '';
-const PASS = config.pass || '';
-const TOPIC = config.topic || '/wlw_szxn_pdx/#';
-const IMEI_FILTER = config.imeiFilter || null; // 可设某网关 IMEI 只看该网关，null 表示全部
+const env = process.env;
+const PORT = parseInt(process.argv[2] || env.PORT || config.port || '3010', 10);
+const BROKER = env.MQTT_BROKER || config.broker || 'mqtt://127.0.0.1:1883';   // 默认本地演示 broker，不内置客户服务器地址
+const USER = env.MQTT_USER || config.user || '';
+const PASS = env.MQTT_PASS || config.pass || '';
+const TOPIC = env.MQTT_TOPIC || config.topic || '/wlw_szxn_pdx/#';
+const IMEI_FILTER = env.MQTT_IMEI || config.imeiFilter || null; // 可设某网关 IMEI 只看该网关，null 表示全部
 
 // 电能表 485 地址 → 回路编号（1号表=回路1 ... 3号表=回路3）
 const METER_ADDR_TO_GROUP = { 1: 1, 2: 2, 3: 3 };
