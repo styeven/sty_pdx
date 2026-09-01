@@ -423,9 +423,11 @@
   <div class="summary-row">
     <div class="summary-card" data-color="cyan">
       <div class="summary-icon">⚡</div>
-      <div class="summary-label">总有功功率 <span class="field">Σ emt_kW</span></div>
+      <!-- 【2026-09-01 修改】总功率/总电流改为取 1 号回路（总进线），不再三回路累加
+           原因：1 号是总开关总进线，2/3 是分开关分支，累加会重复计算 -->
+      <div class="summary-label">总进线功率 <span class="field">emt_kW · 1号回路</span></div>
       <div class="summary-value" id="totalPower">0.000<span class="summary-unit">kW</span></div>
-      <div class="summary-sub">3 回路合计 · 每 10 秒刷新</div>
+      <div class="summary-sub">总进线（1号回路）· 每 10 秒刷新</div>
     </div>
     <div class="summary-card" data-color="green">
       <div class="summary-icon">📊</div>
@@ -435,7 +437,7 @@
     </div>
     <div class="summary-card" data-color="yellow">
       <div class="summary-icon">🔄</div>
-      <div class="summary-label">系统总电流 <span class="field">Σ emt_IA</span></div>
+      <div class="summary-label">总进线电流 <span class="field">emt_IA · 1号回路</span></div>
       <div class="summary-value" id="totalCurrent">0.00<span class="summary-unit">A</span></div>
       <div class="summary-sub" id="loadSub">负载率 --%</div>
     </div>
@@ -735,12 +737,15 @@ function renderLive(){
     const dlq = d && d.dlq;
     renderGroupData(g, emt, dlq);
     if(emt){
-      totalP += emt.emt_kW; totalI += emt.emt_IA;
       maxV = Math.max(maxV, emt.emt_VA); sumPF += emt.emt_TPF; cnt++;
     }
     if(d && d.meterRaw) lastEmtMsg = d.meterRaw;
     if(d && d.dlqRaw) lastDlqMsg = d.dlqRaw;
   });
+  // 【2026-09-01 修改】总功率/总电流直接用 1 号回路（总进线表）的值，不累加
+  //   原因：1 号是总开关总进线，2/3 是分开关分支；累加会把支路电流重复计算
+  const main = liveGroups[1] && liveGroups[1].meter;
+  if(main){ totalP = main.emt_kW || 0; totalI = main.emt_IA || 0; }
   renderSummary(totalP, totalI, maxV, cnt ? sumPF / cnt : 0);
   pushChartData(totalP);
   renderMsg();
@@ -895,15 +900,17 @@ function updateData(){
   if(dataSource === 'live' || dataSource === 'reconnecting'){ renderLive(); return; }
 
   // 模拟数据降级（桥接服务未启动 / 断开时）
-  let totalP = 0, totalI = 0, maxV = 0, sumPF = 0;
+  let totalP = 0, totalI = 0, maxV = 0, sumPF = 0, mainEmt = null;
   GROUPS.forEach(g => {
     const emt = genEmtMsg(g);
     const dlq = genDlqMsg(g);
     lastEmtMsg = emt; lastDlqMsg = dlq;
     renderGroupData(g, emt, dlq);
-    totalP += emt.emt_kW; totalI += emt.emt_IA;
+    if(g.id === 1) mainEmt = emt;   // 【2026-09-01 修改】记录总进线（1号回路）表数据
     maxV = Math.max(maxV, emt.emt_VA); sumPF += emt.emt_TPF;
   });
+  // 【2026-09-01 修改】总功率/总电流取 1 号回路（总进线），与真实模式一致，不累加
+  if(mainEmt){ totalP = mainEmt.emt_kW; totalI = mainEmt.emt_IA; }
   renderSummary(totalP, totalI, maxV, sumPF / 3);
   pushChartData(totalP);
   renderMsg();
@@ -1006,7 +1013,7 @@ function initChart(){
       { label:'1号回路', data:chartData.g1, borderColor:'#00d4ff', backgroundColor:'rgba(0,212,255,0.05)', borderWidth:2, fill:false, tension:0.4, pointRadius:0 },
       { label:'2号回路', data:chartData.g2, borderColor:'#00ff88', backgroundColor:'rgba(0,255,136,0.05)', borderWidth:2, fill:false, tension:0.4, pointRadius:0 },
       { label:'3号回路', data:chartData.g3, borderColor:'#aa66ff', backgroundColor:'rgba(170,102,255,0.05)', borderWidth:2, fill:false, tension:0.4, pointRadius:0 },
-      { label:'总功率', data:chartData.total, borderColor:'rgba(255,204,0,0.9)', backgroundColor:gradient, borderWidth:2.5, fill:true, tension:0.4, pointRadius:0 },
+      { label:'总进线功率', data:chartData.total, borderColor:'rgba(255,204,0,0.9)', backgroundColor:gradient, borderWidth:2.5, fill:true, tension:0.4, pointRadius:0 },
     ]},
     options:{
       responsive:true, maintainAspectRatio:false,
@@ -1052,7 +1059,7 @@ const CHART_LINES = [
   { idx:0, label:'1号回路', color:'#00d4ff', getValue:() => chartData.g1[chartData.g1.length-1] },
   { idx:1, label:'2号回路', color:'#00ff88', getValue:() => chartData.g2[chartData.g2.length-1] },
   { idx:2, label:'3号回路', color:'#aa66ff', getValue:() => chartData.g3[chartData.g3.length-1] },
-  { idx:3, label:'总功率',   color:'#ffcc00', getValue:() => chartData.total[chartData.total.length-1] },
+  { idx:3, label:'总进线功率', color:'#ffcc00', getValue:() => chartData.total[chartData.total.length-1] },
 ];
 
 function initLegend(){
@@ -1105,10 +1112,10 @@ addEvent('info','ℹ','网关在线，IMEI = ' + (liveImei || '自动识别中')
 addEvent('info','📡','等待真实数据上报（协议周期 10s）','device_post');
 
 // 预热图表：真实数据未到时先以模拟值占位
+// 【2026-09-01 修改】预热曲线改用 1 号回路（总进线）功率，与汇总口径一致
 (function preheat(){
   for(let i=0;i<30;i++){
-    const totalP = GROUPS.reduce((s,g)=>s+genEmtMsg(g).emt_kW,0);
-    pushChartData(totalP);
+    pushChartData(genEmtMsg(1).emt_kW);
   }
 })();
 
