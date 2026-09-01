@@ -46,6 +46,7 @@
 ## 服务器部署（Linux / Ubuntu 示例）
 
 > 项目已带 `package.json`，服务器上只需 `npm install` 即可，无需手工装包。
+> **CentOS 7 用户直接跳到下文「CentOS 7 专属命令」**（Node 版本、包管理、防火墙都不同）。
 
 **1. 安装 Node.js（≥ 18，推荐 22 LTS）**
 
@@ -135,6 +136,68 @@ server {
 启用后 `sudo ln -s /etc/nginx/sites-available/sty_pdx /etc/nginx/sites-enabled/ && sudo nginx -s reload`，再用 certbot 免费签发 HTTPS 证书即可。**注意：nginx 反代必须保留 `Upgrade` 相关头，否则页面实时曲线不刷新。**
 
 **Windows 服务器**：装 Node.js 后同样 `npm install` + `node bridge-server.js 3010`，用 NSSM 或任务计划程序做开机自启即可。
+
+## CentOS 7 专属命令
+
+> CentOS 7 的 glibc 为 2.17，**Node 20/22 无法运行，最高只能用 Node 18 LTS**；依赖 mqtt/ws 均为纯 JS，无需编译。
+
+**1. 安装 Node.js 18 LTS**
+
+```bash
+curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+sudo yum install -y nodejs
+node -v    # 应输出 v18.x
+```
+
+**2. 获取代码**
+
+```bash
+sudo yum install -y git
+git clone https://github.com/styeven/sty_pdx.git && cd sty_pdx
+
+# 备选：若老版 git 报 TLS/证书错误，改用 zip 下载
+# sudo yum install -y unzip
+# curl -fsSL -o sty_pdx.zip https://github.com/styeven/sty_pdx/archive/refs/heads/main.zip
+# unzip sty_pdx.zip && cd sty_pdx-main
+```
+
+**3. 配置凭据**
+
+```bash
+cp config.example.json config.local.json
+vi config.local.json    # 填入厂商 MQTT 真实地址/账号/密码
+```
+
+**4. 安装依赖并试运行**
+
+```bash
+npm install
+node bridge-server.js 3010    # 看到 brokerConnected: true 即成功
+```
+
+**5. 防火墙（firewalld）**
+
+```bash
+sudo firewall-cmd --permanent --add-port=3010/tcp
+sudo firewall-cmd --reload
+```
+
+> 云服务器（阿里云/腾讯云等）还需在**云控制台安全组**放行 3010 端口。
+
+**6. 进程守护（推荐 pm2）**
+
+```bash
+sudo npm install -g pm2
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup    # 按提示执行输出的那行命令，实现开机自启
+```
+
+**7. 更新代码**
+
+```bash
+git pull && pm2 restart pdx-bridge
+```
 
 ## 远程控制
 
