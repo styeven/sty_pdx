@@ -1,0 +1,20 @@
+# ===== 智能配电箱数字化看板 .gitignore =====
+# 【2026-09-01 新增】首次提交前必须确认忽略项
+
+# 运行时数据（设备历史数据，不进版本库）
+data-history.jsonl
+*.jsonl.bak
+
+# 本地凭据配置（若选择凭据外置方案）
+config.local.json
+.env
+
+# Node
+node_modules/
+npm-debug.log*
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能配电箱数字化看板 · 协议V1</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  :root{
+    --bg-main:#0a0e1a;
+    --bg-card:rgba(20,27,45,0.85);
+    --bg-card-hover:rgba(28,38,60,0.9);
+    --border:rgba(64,158,255,0.15);
+    --border-bright:rgba(64,158,255,0.4);
+    --text-primary:#e8f0fe;
+    --text-secondary:#8a9bbd;
+    --text-muted:#5a6a8a;
+    --cyan:#00d4ff;
+    --green:#00ff88;
+    --yellow:#ffcc00;
+    --orange:#ff8800;
+    --red:#ff4466;
+    --purple:#aa66ff;
+  }
+  body{
+    background:var(--bg-main);
+    color:var(--text-primary);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    min-height:100vh;
+    overflow-x:hidden;
+    background-image:
+      radial-gradient(ellipse at top,rgba(0,100,200,0.08),transparent 50%),
+      radial-gradient(ellipse at bottom,rgba(0,200,150,0.05),transparent 50%);
+  }
+  body::before{
+    content:'';position:fixed;inset:0;
+    background-image:
+      linear-gradient(rgba(64,158,255,0.03) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(64,158,255,0.03) 1px,transparent 1px);
+    background-size:40px 40px;
+    pointer-events:none;z-index:0;
+  }
+  .dashboard{
+    position:relative;z-index:1;
+    max-width:1920px;margin:0 auto;
+    padding:16px 20px;
+    display:flex;flex-direction:column;gap:16px;
+  }
+
+  /* ===== Header ===== */
+  .header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 24px;
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:12px;
+    backdrop-filter:blur(10px);
+  }
+  .header-left{display:flex;align-items:center;gap:16px;}
+  .logo{
+    width:44px;height:44px;
+    background:linear-gradient(135deg,var(--cyan),var(--green));
+    border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:22px;font-weight:bold;color:#001122;
+    box-shadow:0 0 20px rgba(0,212,255,0.3);
+  }
+  .header h1{
+    font-size:22px;font-weight:700;
+    background:linear-gradient(90deg,var(--cyan),var(--green));
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  }
+  .header-sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+  .header-right{display:flex;align-items:center;gap:20px;}
+  .header-time{text-align:right;}
+  .header-time .time{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--cyan);}
+  .header-time .date{font-size:12px;color:var(--text-secondary);}
+  .system-status{
+    display:flex;align-items:center;gap:8px;
+    padding:8px 16px;
+    background:rgba(0,255,136,0.08);
+    border:1px solid rgba(0,255,136,0.3);
+    border-radius:20px;
+  }
+  .status-dot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.5;}}
+  .status-text{font-size:13px;color:var(--green);font-weight:600;}
+  .proto-tag{
+    font-size:11px;padding:5px 12px;border-radius:6px;
+    background:rgba(0,212,255,0.08);color:var(--cyan);
+    border:1px dashed rgba(0,212,255,0.3);
+  }
+  /* 数据源指示器 */
+  .src-badge{
+    display:flex;align-items:center;gap:7px;
+    font-size:12px;padding:6px 12px;border-radius:6px;font-weight:600;
+    background:rgba(255,204,0,0.08);color:#ffc400;
+    border:1px solid rgba(255,204,0,0.35);transition:all .3s;
+  }
+  .src-badge.live{background:rgba(0,255,136,0.08);color:var(--green);border-color:rgba(0,255,136,0.35);}
+  .src-badge.off{background:rgba(255,80,80,0.08);color:#ff6262;border-color:rgba(255,80,80,0.35);}
+  .src-dot{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor;animation:pulse 1.6s infinite;}
+
+  /* 数据新鲜度指示 */
+  .fresh-chip{
+    display:inline-flex;align-items:center;gap:4px;
+    font-size:11px;padding:2px 7px;border-radius:10px;font-weight:600;
+    background:rgba(0,255,136,0.08);color:var(--green);border:1px solid rgba(0,255,136,0.25);
+    transition:all .3s;font-variant-numeric:tabular-nums;
+  }
+  .fresh-chip.stale{background:rgba(255,204,0,0.08);color:#ffc400;border-color:rgba(255,204,0,0.35);}
+  .fresh-chip.lost{background:rgba(255,68,102,0.1);color:var(--red);border-color:rgba(255,68,102,0.4);animation:alertFlash 1.4s infinite;}
+
+  /* ===== Summary ===== */
+  .summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+  .summary-card{
+    background:var(--bg-card);border:1px solid var(--border);
+    border-radius:12px;padding:18px 20px;position:relative;overflow:hidden;
+    transition:border-color 0.3s;
+  }
+  .summary-card:hover{border-color:var(--border-bright);}
+  .summary-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;}
+  .summary-card[data-color="cyan"]::before{background:var(--cyan);}
+  .summary-card[data-color="green"]::before{background:var(--green);}
+  .summary-card[data-color="yellow"]::before{background:var(--yellow);}
+  .summary-card[data-color="purple"]::before{background:var(--purple);}
+  .summary-icon{
+    position:absolute;top:16px;right:20px;width:36px;height:36px;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;font-size:18px;
+  }
+  .summary-card[data-color="cyan"] .summary-icon{background:rgba(0,212,255,0.1);color:var(--cyan);}
+  .summary-card[data-color="green"] .summary-icon{background:rgba(0,255,136,0.1);color:var(--green);}
+  .summary-card[data-color="yellow"] .summary-icon{background:rgba(255,204,0,0.1);color:var(--yellow);}
+  .summary-card[data-color="purple"] .summary-icon{background:rgba(170,102,255,0.1);color:var(--purple);}
+  .summary-label{font-size:13px;color:var(--text-secondary);margin-bottom:8px;}
+  .summary-label .field{font-family:Consolas,monospace;font-size:11px;color:var(--text-muted);}
+  .summary-value{font-size:32px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;}
+  .summary-card[data-color="cyan"] .summary-value{color:var(--cyan);}
+  .summary-card[data-color="green"] .summary-value{color:var(--green);}
+  .summary-card[data-color="yellow"] .summary-value{color:var(--yellow);}
+  .summary-card[data-color="purple"] .summary-value{color:var(--purple);}
+  .summary-unit{font-size:14px;color:var(--text-muted);font-weight:400;margin-left:4px;}
+  .summary-sub{font-size:12px;margin-top:6px;color:var(--text-muted);}
+
+  /* ===== Chart ===== */
+  .chart-section{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;}
+  /* 【2026-08-31 新增】自定义曲线图例（chip 形态，跟 dashboard 风格统一） */
+  .chart-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+  .legend-chip{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:5px 10px;border-radius:16px;
+    background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
+    font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;
+    transition:all .15s ease;
+  }
+  .legend-chip:hover{border-color:rgba(0,212,255,0.4);background:rgba(0,212,255,0.06);}
+  .legend-chip .dot{width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 6px var(--c);flex-shrink:0;}
+  .legend-chip .name{color:var(--text-secondary);font-weight:500;}
+  .legend-chip .value{color:var(--text-primary);font-family:'Consolas','SF Mono',monospace;font-size:11px;font-weight:600;min-width:54px;text-align:right;}
+  /* on = 启用显示，off = 已隐藏（灰化+删除线） */
+  .legend-chip.on .name{color:var(--text-primary);}
+  .legend-chip.off{opacity:0.45;}
+  .legend-chip.off .name{text-decoration:line-through;}
+  .legend-chip.off .dot{box-shadow:none;background:#555;}
+  .legend-chip.off .value{color:var(--text-tertiary);text-decoration:line-through;}
+  .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .section-title h2{font-size:16px;font-weight:600;}
+  .section-title .badge{
+    font-size:11px;padding:3px 10px;border-radius:4px;
+    background:rgba(0,212,255,0.1);color:var(--cyan);
+    border:1px solid rgba(0,212,255,0.2);
+    font-family:Consolas,monospace;
+  }
+  .chart-container{height:200px;position:relative;}
+
+  /* ===== Group Cards ===== */
+  .groups-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  .group-card{
+    background:var(--bg-card);border:1px solid var(--border);
+    border-radius:12px;padding:18px;position:relative;overflow:hidden;
+    transition:all 0.3s;
+  }
+  .group-card:hover{border-color:var(--border-bright);transform:translateY(-2px);}
+  .group-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;}
+  .group-card[data-group="1"]::before{background:linear-gradient(90deg,var(--cyan),transparent);}
+  .group-card[data-group="2"]::before{background:linear-gradient(90deg,var(--green),transparent);}
+  .group-card[data-group="3"]::before{background:linear-gradient(90deg,var(--purple),transparent);}
+
+  .group-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;}
+  .group-title{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;}
+  .group-num{
+    width:28px;height:28px;border-radius:6px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:14px;font-weight:700;
+  }
+  .group-card[data-group="1"] .group-num{background:rgba(0,212,255,0.12);color:var(--cyan);}
+  .group-card[data-group="2"] .group-num{background:rgba(0,255,136,0.12);color:var(--green);}
+  .group-card[data-group="3"] .group-num{background:rgba(170,102,255,0.12);color:var(--purple);}
+  .addr-chip{
+    font-size:11px;font-family:Consolas,monospace;
+    padding:3px 8px;border-radius:4px;
+    background:rgba(64,158,255,0.08);color:var(--text-secondary);
+    border:1px solid rgba(64,158,255,0.15);
+  }
+  .online-badge{
+    font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;
+    display:inline-flex;align-items:center;gap:5px;
+  }
+  .online-badge .dot{width:6px;height:6px;border-radius:50%;}
+  .online-badge.on{background:rgba(0,255,136,0.1);color:var(--green);border:1px solid rgba(0,255,136,0.3);}
+  .online-badge.on .dot{background:var(--green);box-shadow:0 0 5px var(--green);}
+  .online-badge.off{background:rgba(255,68,102,0.1);color:var(--red);border:1px solid rgba(255,68,102,0.3);}
+  .online-badge.off .dot{background:var(--red);}
+
+  /* Breaker Status (read-only) */
+  .breaker-box{
+    background:rgba(10,14,26,0.6);
+    border:1px solid rgba(64,158,255,0.08);
+    border-radius:8px;padding:10px 12px;margin-bottom:12px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .breaker-label-row{display:flex;align-items:center;gap:6px;}
+  .breaker-label{font-size:12px;color:var(--text-secondary);}
+  .breaker-icon{font-size:14px;}
+  .breaker-field{font-size:11px;color:var(--text-muted);font-family:Consolas,monospace;margin-left:6px;}
+  .breaker-state{
+    display:flex;align-items:center;gap:8px;
+    padding:6px 14px;border-radius:6px;font-size:13px;font-weight:700;
+    transition:all 0.4s;
+  }
+  .breaker-state.on{background:rgba(0,255,136,0.12);color:var(--green);border:1px solid rgba(0,255,136,0.35);box-shadow:0 0 12px rgba(0,255,136,0.15);}
+  .breaker-state.off{background:rgba(255,68,102,0.12);color:var(--red);border:1px solid rgba(255,68,102,0.35);}
+  .breaker-state .blink{width:10px;height:10px;border-radius:50%;}
+  .breaker-state.on .blink{background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite;}
+  .breaker-state.off .blink{background:var(--red);box-shadow:0 0 6px var(--red);}
+
+  /* 【2026-08-31 新增】远程合闸/分闸控制按钮 */
+  .breaker-ctrl{display:flex;gap:8px;margin-left:10px;flex-shrink:0;}
+  .ctrl-btn{
+    padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;
+    background:rgba(10,14,26,0.8);transition:all .25s;font-family:inherit;line-height:1.4;
+  }
+  .ctrl-btn.on{color:var(--green);border:1px solid rgba(0,255,136,0.4);}
+  .ctrl-btn.on:hover:not(:disabled){background:rgba(0,255,136,0.15);box-shadow:0 0 10px rgba(0,255,136,0.25);}
+  .ctrl-btn.off{color:var(--red);border:1px solid rgba(255,68,102,0.4);}
+  .ctrl-btn.off:hover:not(:disabled){background:rgba(255,68,102,0.15);box-shadow:0 0 10px rgba(255,68,102,0.25);}
+  .ctrl-btn:disabled{opacity:0.35;cursor:not-allowed;}
+  .ctrl-btn.busy{opacity:0.7;cursor:wait;}
+
+  /* 【2026-08-31 新增】控制确认弹窗（真实断路器操作，防误触） */
+  .ctrl-mask{
+    position:fixed;inset:0;background:rgba(2,8,20,0.72);backdrop-filter:blur(4px);
+    display:flex;align-items:center;justify-content:center;z-index:999;
+  }
+  .ctrl-modal{
+    width:430px;max-width:90vw;
+    background:linear-gradient(160deg,#0d1526,#0a0e1a);
+    border:1px solid rgba(64,158,255,0.25);border-radius:14px;
+    padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,0.5);
+  }
+  .ctrl-modal-title{font-size:16px;font-weight:700;color:#fff;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+  .ctrl-modal-body{font-size:14px;color:var(--text-secondary);line-height:1.8;margin-bottom:20px;}
+  .ctrl-modal-body b{color:#fff;}
+  .ctrl-modal-actions{display:flex;justify-content:flex-end;gap:10px;}
+  .ctrl-modal-btn{
+    padding:8px 20px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;
+    border:1px solid transparent;font-family:inherit;transition:all .2s;
+  }
+  .ctrl-modal-btn.cancel{color:var(--text-secondary);border-color:rgba(255,255,255,0.15);background:transparent;}
+  .ctrl-modal-btn.cancel:hover{color:#fff;border-color:rgba(255,255,255,0.4);}
+  .ctrl-modal-btn.ok{background:linear-gradient(135deg,#00d4ff,#0080ff);color:#001122;}
+  .ctrl-modal-btn.ok:hover{box-shadow:0 0 14px rgba(0,160,255,0.5);}
+  .ctrl-modal-btn.ok.danger{background:linear-gradient(135deg,#ff4466,#cc2244);color:#fff;}
+  .ctrl-modal-btn.ok.danger:hover{box-shadow:0 0 14px rgba(255,68,102,0.5);}
+
+  /* Gauges */
+  .gauges-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+  .gauge-box{
+    background:rgba(10,14,26,0.6);
+    border:1px solid rgba(64,158,255,0.08);
+    border-radius:8px;padding:10px 8px;text-align:center;
+  }
+  .gauge-svg{width:100%;max-width:100px;height:auto;margin:0 auto;display:block;}
+  .gauge-value{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:4px;}
+  .gauge-label{font-size:11px;color:var(--text-muted);margin-top:2px;}
+  .gauge-label .f{font-family:Consolas,monospace;color:var(--text-secondary);}
+  .group-card[data-group="1"] .gauge-value{color:var(--cyan);}
+  .group-card[data-group="2"] .gauge-value{color:var(--green);}
+  .group-card[data-group="3"] .gauge-value{color:var(--purple);}
+
+  /* Meters grid */
+  .meters-grid{
+    display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px;
+  }
+  .meter-item{
+    background:rgba(10,14,26,0.6);
+    border:1px solid rgba(64,158,255,0.08);
+    border-radius:8px;padding:8px 10px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .meter-label{font-size:11px;color:var(--text-muted);}
+  .meter-label .f{font-family:Consolas,monospace;color:var(--text-secondary);font-size:10px;}
+  .meter-value{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;}
+  .meter-value .u{font-size:11px;color:var(--text-muted);font-weight:400;margin-left:2px;}
+  .group-card[data-group="1"] .meter-value{color:var(--cyan);}
+  .group-card[data-group="2"] .meter-value{color:var(--green);}
+  .group-card[data-group="3"] .meter-value{color:var(--purple);}
+
+  /* Energy display */
+  .energy-box{
+    background:rgba(10,14,26,0.6);
+    border:1px solid rgba(64,158,255,0.08);
+    border-radius:8px;padding:10px 12px;
+    display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;
+  }
+  .energy-label{font-size:11px;color:var(--text-muted);}
+  .energy-label .f{font-family:Consolas,monospace;color:var(--text-secondary);}
+  .energy-value{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .energy-value .u{font-size:11px;color:var(--text-muted);font-weight:400;margin-left:2px;}
+  .energy-sub{display:flex;gap:10px;margin-top:6px;font-size:11px;color:var(--text-muted);}
+  .energy-sub span b{color:var(--text-secondary);font-variant-numeric:tabular-nums;}
+  .group-card[data-group="1"] .energy-value{color:var(--cyan);}
+  .group-card[data-group="2"] .energy-value{color:var(--green);}
+  .group-card[data-group="3"] .energy-value{color:var(--purple);}
+
+  /* ===== Bottom ===== */
+  .bottom-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .panel{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;}
+
+  /* MQTT panel */
+  .mqtt-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;font-size:13px;}
+  .mqtt-key{color:var(--text-secondary);}
+  .mqtt-val{color:var(--text-primary);font-family:Consolas,monospace;font-size:12px;}
+  .mqtt-val.server{color:var(--cyan);}
+  .mqtt-val.topic{color:var(--green);}
+  .mqtt-divider{border:none;border-top:1px dashed rgba(64,158,255,0.15);margin:10px 0;}
+  .last-msg-title{font-size:12px;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+  .last-msg-title .live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 1.5s infinite;}
+  .msg-tabs{display:flex;gap:6px;margin-bottom:8px;}
+  .msg-tab{
+    font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;
+    background:rgba(64,158,255,0.06);color:var(--text-muted);
+    border:1px solid rgba(64,158,255,0.12);transition:all 0.2s;
+  }
+  .msg-tab.active{background:rgba(0,212,255,0.12);color:var(--cyan);border-color:rgba(0,212,255,0.3);}
+  .json-view{
+    background:rgba(8,11,22,0.9);
+    border:1px solid rgba(64,158,255,0.12);
+    border-radius:6px;padding:12px;
+    font-family:Consolas,monospace;font-size:12px;line-height:1.7;
+    color:#7ee0ff;overflow-x:auto;white-space:pre-wrap;word-break:break-all;
+    max-height:210px;overflow-y:auto;
+  }
+  .json-view .k{color:#ffcc66;}
+  .json-view .n{color:#66ff99;}
+
+  /* Event log */
+  .event-log{max-height:300px;overflow-y:auto;}
+  .event-log::-webkit-scrollbar{width:4px;}
+  .event-log::-webkit-scrollbar-track{background:transparent;}
+  .event-log::-webkit-scrollbar-thumb{background:rgba(64,158,255,0.2);border-radius:2px;}
+  .log-item{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(64,158,255,0.06);}
+  .log-item:last-child{border-bottom:none;}
+  .log-icon{
+    width:20px;height:20px;border-radius:4px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:11px;flex-shrink:0;
+  }
+  .log-icon.info{background:rgba(0,212,255,0.12);color:var(--cyan);}
+  .log-icon.warn{background:rgba(255,204,0,0.12);color:var(--yellow);}
+  .log-icon.error{background:rgba(255,68,102,0.12);color:var(--red);}
+  .log-icon.success{background:rgba(0,255,136,0.12);color:var(--green);}
+  .log-icon.alert{background:rgba(255,68,102,0.2);color:var(--red);box-shadow:0 0 8px rgba(255,68,102,0.6);animation:alertFlash 1s infinite;}
+  @keyframes alertFlash{0%,100%{opacity:1;}50%{opacity:0.4;}}
+  .log-item.alert{border-left:3px solid var(--red);background:rgba(255,68,102,0.04);}
+  .log-content{flex:1;}
+  .log-text{font-size:13px;color:var(--text-primary);line-height:1.4;}
+  .log-text .f{font-family:Consolas,monospace;color:var(--cyan);font-size:12px;}
+  .log-time{font-size:11px;color:var(--text-muted);margin-top:2px;}
+
+  .footer{text-align:center;padding:12px;font-size:12px;color:var(--text-muted);}
+
+  /* Responsive */
+  @media(max-width:1200px){
+    .summary-row{grid-template-columns:repeat(2,1fr);}
+    .groups-row{grid-template-columns:1fr;}
+    .bottom-row{grid-template-columns:1fr;}
+  }
+  @media(max-width:600px){
+    .summary-row{grid-template-columns:1fr;}
+    .header{flex-direction:column;gap:12px;}
+    .meters-grid{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="dashboard">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">⚡</div>
+      <div>
+        <h1>智能配电箱数字化看板</h1>
+        <div class="header-sub">Smart Distribution Box · Real-time Monitor</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="proto-tag">协议版本 V1_260723</div>
+      <div class="src-badge" id="srcBadge"><span class="src-dot"></span><span id="srcText">连接桥接服务...</span></div>
+      <div class="header-time">
+        <div class="time" id="clockTime">--:--:--</div>
+        <div class="date" id="clockDate">--</div>
+      </div>
+      <div class="system-status">
+        <div class="status-dot"></div>
+        <span class="status-text">系统运行正常</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary-row">
+    <div class="summary-card" data-color="cyan">
+      <div class="summary-icon">⚡</div>
+      <div class="summary-label">总有功功率 <span class="field">Σ emt_kW</span></div>
+      <div class="summary-value" id="totalPower">0.000<span class="summary-unit">kW</span></div>
+      <div class="summary-sub">3 回路合计 · 每 10 秒刷新</div>
+    </div>
+    <div class="summary-card" data-color="green">
+      <div class="summary-icon">📊</div>
+      <div class="summary-label">A相电压 <span class="field">emt_VA</span></div>
+      <div class="summary-value" id="totalVoltage">0.0<span class="summary-unit">V</span></div>
+      <div class="summary-sub">显示当前最高回路电压</div>
+    </div>
+    <div class="summary-card" data-color="yellow">
+      <div class="summary-icon">🔄</div>
+      <div class="summary-label">系统总电流 <span class="field">Σ emt_IA</span></div>
+      <div class="summary-value" id="totalCurrent">0.00<span class="summary-unit">A</span></div>
+      <div class="summary-sub" id="loadSub">负载率 --%</div>
+    </div>
+    <div class="summary-card" data-color="purple">
+      <div class="summary-icon">📐</div>
+      <div class="summary-label">平均功率因数 <span class="field">avg emt_TPF</span></div>
+      <div class="summary-value" id="powerFactor">0.000<span class="summary-unit"></span></div>
+      <div class="summary-sub">补偿状态正常</div>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="chart-section">
+    <div class="section-title">
+      <h2>📈 实时功率趋势（emt_kW）</h2>
+      <span class="badge">刷新周期 10s · 最近 10 分钟</span>
+    </div>
+    <!-- 【2026-08-31 新增】自定义曲线开关：HTML 点击命中不受 Chart.js canvas hitTest 影响 -->
+    <div class="chart-legend" id="chartLegend"></div>
+    <div class="chart-container"><canvas id="powerChart"></canvas></div>
+  </div>
+
+  <!-- Groups -->
+  <div class="groups-row" id="groupsRow"></div>
+
+  <!-- Bottom -->
+  <div class="bottom-row">
+    <!-- MQTT Panel -->
+    <div class="panel">
+      <div class="section-title">
+        <h2>📡 MQTT 通信状态</h2>
+        <span class="badge" id="mqttState">在线</span>
+      </div>
+      <!-- 【2026-09-01 修改】服务器地址/IMEI 改动态显示：入库时用占位符，运行时由桥接服务下发真实值 -->
+      <!--   原因：仓库公开提交，厂商服务器地址与设备 IMEI 属客户敏感信息，不硬编码在 HTML -->
+      <div class="mqtt-row"><span class="mqtt-key">MQTT 服务器</span><span class="mqtt-val server" id="mqttServer">（服务端配置）</span></div>
+      <!-- 【2026-08-31 修改】隐藏 MQTT 账号密码明文，防止投屏/分享时泄露；如需查看请查阅服务端 config.local.json -->
+      <div class="mqtt-row"><span class="mqtt-key">账号 / 密码</span><span class="mqtt-val">•••••• / ••••••</span></div>
+      <div class="mqtt-row"><span class="mqtt-key">服务器订阅主题</span><span class="mqtt-val topic">/wlw_szxn_pdx/#</span></div>
+      <div class="mqtt-row"><span class="mqtt-key">设备上报主题</span><span class="mqtt-val topic">/wlw_szxn_pdx/IMEI/device_post</span></div>
+      <div class="mqtt-row"><span class="mqtt-key">网关 IMEI</span><span class="mqtt-val" id="mqttImei">（待识别）</span></div>
+      <div class="mqtt-row"><span class="mqtt-key">上报频率</span><span class="mqtt-val">实时 10s / 固定 上电1次 / 报警 立即</span></div>
+      <hr class="mqtt-divider">
+      <div class="last-msg-title"><span class="live-dot"></span> 最新接收报文（模拟）</div>
+      <div class="msg-tabs">
+        <div class="msg-tab active" id="tabEmt" onclick="switchMsg('emt')">电表 pdx_post_emt</div>
+        <div class="msg-tab" id="tabDlq" onclick="switchMsg('dlq')">断路器 pdx_post_dlq</div>
+      </div>
+      <div class="json-view" id="jsonView"></div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="panel">
+      <div class="section-title">
+        <h2>🔔 事件上报日志</h2>
+        <span class="badge" id="eventCount">0 条</span>
+      </div>
+      <div class="event-log" id="eventLog"></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    智能配电箱数字化看板 · 数据采集协议 V1_260723 · 实时数据每 10 秒上报 · © 2026 塘下-数智新能
+  </div>
+
+  <!-- 【2026-08-31 新增】远程合闸/分闸确认弹窗（真实断路器操作，防误触） -->
+  <div class="ctrl-mask" id="ctrlMask" style="display:none" onclick="if(event.target===this)closeCtrlModal()">
+    <div class="ctrl-modal">
+      <div class="ctrl-modal-title">⚠️ 断路器远程控制确认</div>
+      <div class="ctrl-modal-body" id="ctrlModalBody"></div>
+      <div class="ctrl-modal-actions">
+        <button class="ctrl-modal-btn cancel" onclick="closeCtrlModal()">取消</button>
+        <button class="ctrl-modal-btn ok" id="ctrlModalOk" onclick="confirmCtrl()">确认</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 协议配置（对齐 V1_260723） =====
+const GROUPS = [
+  // 【2026-08-31 修改】baseIA 改为轻载小值：模拟数据仅用于"桥接离线"降级演示，
+  //   原因：原 30/45/25A 模拟值会让"未接负载"的设备显示几十安培大电流，误导用户
+  { id:1, name:'1号回路', color:'cyan',   colorVal:'#00d4ff', emtAddr:1,  dlqAddr:11, baseIA:0.6, kWhBase:132.45 },
+  { id:2, name:'2号回路', color:'green',  colorVal:'#00ff88', emtAddr:2,  dlqAddr:12, baseIA:0.8, kWhBase:218.70 },
+  { id:3, name:'3号回路', color:'purple', colorVal:'#aa66ff', emtAddr:3,  dlqAddr:13, baseIA:0.3, kWhBase:96.30 },
+];
+// 【2026-09-01 修改】IMEI 不再硬编码真实网关编码（仓库公开提交，设备标识属敏感信息）
+//   真实 IMEI 由桥接服务从报文自动识别，经 ws 消息写入 liveImei 变量
+let IMEI = ''; // 兼容旧引用（mock 报文/控制请求兜底用，真实值以 liveImei 为准）
+const REPORT_INTERVAL = 10000; // 协议：实时数据每10秒1次
+
+// ===== 时钟 =====
+function updateClock(){
+  const now = new Date();
+  const p = n => String(n).padStart(2,'0');
+  document.getElementById('clockTime').textContent = `${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
+  const days = ['日','一','二','三','四','五','六'];
+  document.getElementById('clockDate').textContent = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 星期${days[now.getDay()]}`;
+}
+setInterval(updateClock,1000); updateClock();
+
+// ===== 构建组卡片 =====
+function buildGroups(){
+  const container = document.getElementById('groupsRow');
+  container.innerHTML = GROUPS.map(g => `
+    <div class="group-card" data-group="${g.id}">
+      <div class="group-header">
+        <div class="group-title">
+          <div class="group-num">${g.id}</div>
+          <span>${g.name}</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <span class="addr-chip">电表:${g.emtAddr}</span>
+          <span class="addr-chip">断路器:${g.dlqAddr}</span>
+          <span class="fresh-chip" id="fresh-${g.id}">—</span>
+          <span class="online-badge on" id="online-${g.id}"><span class="dot"></span>在线</span>
+        </div>
+      </div>
+      <div class="breaker-box">
+        <div class="breaker-label-row">
+          <span class="breaker-icon">🔌</span>
+          <span class="breaker-label">断路器闸位</span>
+          <span class="breaker-field">dlq_IO</span>
+        </div>
+        <div class="breaker-state on" id="breakerState-${g.id}">
+          <span class="blink"></span>
+          <span id="breakerText-${g.id}">合闸</span>
+        </div>
+        <!-- 【2026-08-31 新增】远程合闸/分闸控制按钮（真实数据模式可用，桥接离线时禁用） -->
+        <div class="breaker-ctrl">
+          <button class="ctrl-btn on" id="ctrlBtn-${g.id}-on" onclick="sendControl(${g.id},'on')">合闸</button>
+          <button class="ctrl-btn off" id="ctrlBtn-${g.id}-off" onclick="sendControl(${g.id},'off')">分闸</button>
+        </div>
+      </div>
+      <div class="gauges-row">
+        <div class="gauge-box">
+          <div class="gauge-svg" id="gaugeV-${g.id}"></div>
+          <div class="gauge-value" id="valV-${g.id}">0.0V</div>
+          <div class="gauge-label"><span class="f">emt_VA</span> · 电压</div>
+        </div>
+        <div class="gauge-box">
+          <div class="gauge-svg" id="gaugeI-${g.id}"></div>
+          <div class="gauge-value" id="valI-${g.id}">0.00A</div>
+          <div class="gauge-label"><span class="f">emt_IA</span> · 电流</div>
+        </div>
+      </div>
+      <div class="meters-grid">
+        <div class="meter-item">
+          <span class="meter-label">有功功率 <span class="f">emt_kW</span></span>
+          <span class="meter-value" id="valP-${g.id}">0.000<span class="u">kW</span></span>
+        </div>
+        <div class="meter-item">
+          <span class="meter-label">无功功率 <span class="f">emt_kVar</span></span>
+          <span class="meter-value" id="valQ-${g.id}">0.000<span class="u">kVar</span></span>
+        </div>
+        <div class="meter-item">
+          <span class="meter-label">功率因数 <span class="f">emt_TPF</span></span>
+          <span class="meter-value" id="valPF-${g.id}">0.000</span>
+        </div>
+        <div class="meter-item">
+          <span class="meter-label">电源频率 <span class="f">emt_HZ</span></span>
+          <span class="meter-value" id="valHZ-${g.id}">0.00<span class="u">Hz</span></span>
+        </div>
+      </div>
+      <div class="energy-box">
+        <div>
+          <div class="energy-label">组合有功总电能 <span class="f">emt_kWh</span></div>
+          <div class="energy-sub">
+            <span>正向 <b id="fwd-${g.id}">0.0</b> kWh</span>
+            <span>反向 <b id="rev-${g.id}">0.0</b> kWh</span>
+          </div>
+        </div>
+        <div class="energy-value" id="valKWh-${g.id}">0.00<span class="u">kWh</span></div>
+      </div>
+    </div>
+  `).join('');
+
+  GROUPS.forEach(g => {
+    document.getElementById(`gaugeV-${g.id}`).innerHTML = createGaugeSVG('V'+g.id, g.colorVal, 0, 300);
+    document.getElementById(`gaugeI-${g.id}`).innerHTML = createGaugeSVG('I'+g.id, g.colorVal, 0, 80);
+  });
+}
+
+// ===== SVG 仪表盘 =====
+function createGaugeSVG(id, color, val, max){
+  const pct = Math.min(val/max, 1);
+  const filledAngle = -120 + pct * 240;
+  const r = 32, cx = 40, cy = 42;
+  function polar(cx,cy,r,ang){
+    const rad = (ang-90)*Math.PI/180;
+    return [cx + r*Math.cos(rad), cy + r*Math.sin(rad)];
+  }
+  function arc(cx,cy,r,sa,ea){
+    const [x1,y1] = polar(cx,cy,r,sa);
+    const [x2,y2] = polar(cx,cy,r,ea);
+    const la = Math.abs(ea-sa) > 180 ? 1 : 0;
+    return `M ${x1} ${y1} A ${r} ${r} 0 ${la} 1 ${x2} ${y2}`;
+  }
+  const bg = arc(cx,cy,r,-120,120);
+  const fg = arc(cx,cy,r,-120,filledAngle);
+  const [nx,ny] = polar(cx,cy,r-8,filledAngle);
+  return `<svg viewBox="0 0 80 60" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="grad-${id}" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="1"/>
+    </linearGradient></defs>
+    <path d="${bg}" fill="none" stroke="rgba(64,158,255,0.1)" stroke-width="5" stroke-linecap="round"/>
+    <path d="${fg}" fill="none" stroke="url(#grad-${id})" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="${nx}" cy="${ny}" r="3" fill="${color}" opacity="0.8"/>
+    <circle cx="${cx}" cy="${cy}" r="4" fill="${color}"/>
+    <circle cx="${cx}" cy="${cy}" r="2" fill="#001122"/>
+  </svg>`;
+}
+
+// ===== 模拟协议数据生成（生成完整 MQTT 报文） =====
+function genEmtMsg(g){
+  const noise = () => (Math.random()-0.5)*2;
+  const VA = Math.round((220 + noise()*4 + g.id*1.5)*10)/10;   // 精度0.1
+  const IA = Math.round((g.baseIA*(1+noise()*0.04) + (Math.random()-0.5)*3)*100)/100; // 精度0.01
+  const TPF = Math.round((0.93 + (Math.random()-0.5)*0.06)*1000)/1000; // 精度0.001
+  const HZ = Math.round((50.00 + (Math.random()-0.5)*0.10)*100)/100;   // 精度0.01
+  const kW = Math.round((VA*IA*TPF/1000)*1000)/1000;           // 精度0.001
+  const kVar = Math.round((VA*IA*Math.sqrt(Math.max(0,1-TPF*TPF))/1000)*1000)/1000; // 精度0.001
+  g._kWh = (g._kWh ?? g.kWhBase) + kW*(REPORT_INTERVAL/3600000);
+  const kWh = Math.round(g._kWh*100)/100;                       // 精度0.01
+  const FWD = Math.round((kWh - 0.02)*100)/100;
+  const REV = Math.round((0.02 + Math.random()*0.02)*100)/100;
+  return {
+    IMEI, MsgType:'pdx_post_emt', online:1, rs485_addr:g.emtAddr,
+    emt_VA:VA, emt_IA:IA, emt_kW:kW, emt_kVar:kVar, emt_TPF:TPF,
+    emt_HZ:HZ, emt_kWh:kWh, emt_FWD_kWh:FWD, emt_REV_kWh:REV
+  };
+}
+function genDlqMsg(g){
+  return {
+    IMEI, MsgType:'pdx_post_dlq', online:1, rs485_addr:g.dlqAddr, dlq_IO:1
+  };
+}
+
+// ===== 报文解析 & 更新界面 =====
+let lastEmtMsg = null, lastDlqMsg = null;
+
+// 渲染单个回路卡片（模拟/真实数据共用）
+function renderGroupData(g, emt, dlq){
+  // 断路器闸位（只读显示，协议 1=合闸 0=开闸）
+  const st = document.getElementById(`breakerState-${g.id}`);
+  const txt = document.getElementById(`breakerText-${g.id}`);
+  if(dlq && dlq.dlq_IO === 1){ st.className = 'breaker-state on'; txt.textContent = '合闸'; }
+  else if(dlq){ st.className = 'breaker-state off'; txt.textContent = '开闸'; }
+
+  // 在线状态：【2026-08-31 修改】统一由 freshHeartbeat（每5s）按 updatedAt
+  //   距今 >60s 判定离线，此处不再更新，避免与心跳判据打架。
+  if(!emt) return; // 电表数据尚未到达，仅更新断路器闸位
+
+  // 仪表盘
+  document.getElementById(`gaugeV-${g.id}`).innerHTML = createGaugeSVG('V'+g.id, g.colorVal, emt.emt_VA, 300);
+  document.getElementById(`gaugeI-${g.id}`).innerHTML = createGaugeSVG('I'+g.id, g.colorVal, emt.emt_IA, 80);
+  document.getElementById(`valV-${g.id}`).textContent = emt.emt_VA.toFixed(1) + 'V';
+  document.getElementById(`valI-${g.id}`).textContent = emt.emt_IA.toFixed(2) + 'A';
+
+  // 电表数据
+  document.getElementById(`valP-${g.id}`).innerHTML = emt.emt_kW.toFixed(3) + '<span class="u">kW</span>';
+  document.getElementById(`valQ-${g.id}`).innerHTML = emt.emt_kVar.toFixed(3) + '<span class="u">kVar</span>';
+  document.getElementById(`valPF-${g.id}`).textContent = emt.emt_TPF.toFixed(3);
+  document.getElementById(`valHZ-${g.id}`).innerHTML = emt.emt_HZ.toFixed(2) + '<span class="u">Hz</span>';
+  document.getElementById(`valKWh-${g.id}`).innerHTML = emt.emt_kWh.toFixed(2) + '<span class="u">kWh</span>';
+  document.getElementById(`fwd-${g.id}`).textContent = emt.emt_FWD_kWh.toFixed(2);
+  document.getElementById(`rev-${g.id}`).textContent = emt.emt_REV_kWh.toFixed(2);
+}
+
+// 渲染总览汇总
+function renderSummary(totalP, totalI, maxV, avgPF){
+  document.getElementById('totalPower').innerHTML = totalP.toFixed(3) + '<span class="summary-unit">kW</span>';
+  document.getElementById('totalVoltage').innerHTML = maxV.toFixed(1) + '<span class="summary-unit">V</span>';
+  document.getElementById('totalCurrent').innerHTML = totalI.toFixed(2) + '<span class="summary-unit">A</span>';
+  document.getElementById('powerFactor').innerHTML = avgPF.toFixed(3) + '<span class="summary-unit"></span>';
+  const loadRate = Math.round(totalI / 180 * 100);
+  document.getElementById('loadSub').textContent = `负载率 ${loadRate}%`;
+}
+
+// ===== 真实数据源（WebSocket 连接本地桥接服务） =====
+// 【2026-08-31 修改】新增：真实 MQTT 数据接入
+//   原因：厂商服务器 44933 仅原生 MQTT（不支持 WebSocket），浏览器无法直连，
+//         由 bridge-server.js 订阅真实数据后经 ws://localhost:3010 转发到本页面。
+let liveGroups = {};      // {1:{meter:换算后, dlq:{dlq_IO,online}, meterRaw, dlqRaw}}
+let liveImei = null;
+let dataSource = 'connecting'; // connecting | live | mock
+let lastLiveAt = 0;            // 最近一次收到真实报文的时间戳
+let lastEventTime = '';        // 增量同步服务端事件的去重时间锚
+
+function renderLive(){
+  let totalP = 0, totalI = 0, maxV = 0, sumPF = 0, cnt = 0;
+  GROUPS.forEach(g => {
+    const d = liveGroups[g.id];
+    const emt = d && d.meter;
+    const dlq = d && d.dlq;
+    renderGroupData(g, emt, dlq);
+    if(emt){
+      totalP += emt.emt_kW; totalI += emt.emt_IA;
+      maxV = Math.max(maxV, emt.emt_VA); sumPF += emt.emt_TPF; cnt++;
+    }
+    if(d && d.meterRaw) lastEmtMsg = d.meterRaw;
+    if(d && d.dlqRaw) lastDlqMsg = d.dlqRaw;
+  });
+  renderSummary(totalP, totalI, maxV, cnt ? sumPF / cnt : 0);
+  pushChartData(totalP);
+  renderMsg();
+}
+
+function updateSrcBadge(){
+  const b = document.getElementById('srcBadge');
+  const t = document.getElementById('srcText');
+  if(dataSource === 'live'){ b.className = 'src-badge live'; t.textContent = '真实数据 LIVE'; }
+  else if(dataSource === 'reconnecting'){ b.className = 'src-badge'; t.textContent = '桥接断开 · 重连中'; }
+  else if(dataSource === 'connecting'){ b.className = 'src-badge'; t.textContent = '连接桥接服务...'; }
+  else{ b.className = 'src-badge off'; t.textContent = '模拟数据（桥接离线）'; }
+  updateCtrlButtons(); // 【2026-08-31 新增】数据源变化时同步控制按钮可用状态
+}
+
+// ===== 远程合闸/分闸控制 =====
+// 【2026-08-31 新增】前端经 POST /api/control → bridge-server 发布 MQTT 控制报文
+//   链路: 看板按钮 → 确认弹窗 → fetch → bridge-server → 厂商MQTT server_ctrl → 断路器
+//   真实断路器操作，仅"真实数据 live"模式可用；桥接离线(模拟/重连)时禁用防误操作
+let pendingCtrl = null; // {group, action} 待确认的操作
+
+function updateCtrlButtons(){
+  const live = dataSource === 'live';
+  GROUPS.forEach(g => {
+    ['on','off'].forEach(a => {
+      const btn = document.getElementById(`ctrlBtn-${g.id}-${a}`);
+      if(!btn || btn.classList.contains('busy')) return;
+      btn.disabled = !live;
+    });
+  });
+}
+
+function sendControl(group, action){
+  const g = GROUPS.find(x => x.id === group);
+  if(!g) return;
+  if(dataSource !== 'live'){
+    addEvent('alert','🔴', `回路${group} 控制被拒绝：当前${dataSource === 'mock' ? '为模拟数据（桥接离线）' : '桥接未就绪'}，请等待真实数据连接`, '');
+    return;
+  }
+  const label = action === 'on' ? '合闸' : '分闸';
+  const color = action === 'on' ? 'var(--green)' : 'var(--red)';
+  pendingCtrl = { group, action };
+  document.getElementById('ctrlModalBody').innerHTML =
+    `即将对 <b>${g.name}</b>（断路器 485 地址 ${g.dlqAddr}）执行<br>` +
+    `<span style="font-size:18px;font-weight:700;color:${color}">${label}</span> 操作。<br>` +
+    `⚠️ 请确认现场断路器状态与作业安全后，再点击确认下发。`;
+  const ok = document.getElementById('ctrlModalOk');
+  ok.textContent = '确认' + label;
+  ok.className = 'ctrl-modal-btn ok' + (action === 'off' ? ' danger' : '');
+  document.getElementById('ctrlMask').style.display = 'flex';
+}
+
+function closeCtrlModal(){
+  document.getElementById('ctrlMask').style.display = 'none';
+  pendingCtrl = null;
+}
+
+function confirmCtrl(){
+  if(!pendingCtrl) return;
+  const { group, action } = pendingCtrl;
+  closeCtrlModal();
+  doControl(group, action);
+}
+
+async function doControl(group, action){
+  const g = GROUPS.find(x => x.id === group);
+  const label = action === 'on' ? '合闸' : '分闸';
+  const btn = document.getElementById(`ctrlBtn-${group}-${action}`);
+  if(btn){ btn.disabled = true; btn.classList.add('busy'); btn.textContent = '下发中...'; }
+  try{
+    const res = await fetch('/api/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group, action, imei: liveImei || IMEI }),
+    });
+    const data = await res.json();
+    if(data.ok){
+      addEvent('ctrl','🎛️', `回路${group} ${label}指令已下发（${data.topic}），等待设备回传确认`, 'server_ctrl');
+    } else {
+      addEvent('alert','🔴', `回路${group} ${label}失败：${data.error || '未知错误'}`, '');
+    }
+  }catch(e){
+    addEvent('alert','🔴', `回路${group} ${label}失败：无法连接桥接服务`, '');
+  }finally{
+    if(btn){ btn.classList.remove('busy'); btn.textContent = label; updateCtrlButtons(); }
+  }
+}
+
+function connectBridge(){
+  let ws;
+  // 【2026-08-31 修改】ws 地址跟随页面地址自动获取（页面经 http://IP:3010 打开时自动连 ws://IP:3010）
+  const wsUrl = 'ws://' + location.host;
+  try{ ws = new WebSocket(wsUrl); }
+  catch(e){ dataSource = 'mock'; updateSrcBadge(); setTimeout(connectBridge, 5000); return; }
+  ws.onopen = () => {
+    dataSource = 'connecting';
+    updateSrcBadge();
+    addEvent('info', '📡', '已连接本地桥接服务', wsUrl);
+  };
+  ws.onmessage = (ev) => {
+    try{
+      const msg = JSON.parse(ev.data);
+      if(msg.type !== 'state') return;
+      if(msg.imei) liveImei = msg.imei;
+      // 【2026-09-01 新增】动态更新 MQTT 面板：服务器地址/IMEI 运行时由桥接服务下发，不硬编码在页面
+      const srvEl = document.getElementById('mqttServer');
+      if(srvEl && msg.broker) srvEl.textContent = String(msg.broker).replace(/^mqtt:\/\//,'');
+      const imeiEl = document.getElementById('mqttImei');
+      if(imeiEl && liveImei) imeiEl.textContent = liveImei;
+      dataSource = 'live';
+      lastLiveAt = Date.now();
+      updateSrcBadge();
+      GROUPS.forEach(g => {
+        const grp = msg.groups[String(g.id)] || msg.groups[g.id];
+        if(!grp) return;
+        liveGroups[g.id] = {
+          meter: grp.meter || null,
+          dlq: grp.dlq || null,
+          meterRaw: grp.meterRaw || null,
+          dlqRaw: grp.dlqRaw || null,
+          updatedAt: grp.updatedAt || null,  // 【2026-08-31 修改】未收到过数据保持 null，不兜底当前时间
+        };
+      });
+      // 增量同步服务端事件到 UI（避免重复）
+      const evtList = msg.events || [];
+      for(const e of evtList){
+        if(e.time <= lastEventTime) continue; // 旧的跳过
+        lastEventTime = e.time;
+        if(e.type === 'alert'){
+          addEvent('alert', '🔴', e.text, '');
+        } else {
+          // 通用 info 事件（去重本地已展示过的）
+        }
+      }
+      renderLive();
+    }catch(e){}
+  };
+  ws.onclose = () => {
+    // 【2026-08-31 修改】有过真实数据 → 保持最后真实值并显示"重连中"，不切模拟假数据；
+    //   仅从未收到过真实数据（首次打开且桥接未启动）才降级模拟演示。
+    if(lastLiveAt > 0){ dataSource = 'reconnecting'; }
+    else{ dataSource = 'mock'; }
+    updateSrcBadge();
+    setTimeout(connectBridge, 5000); // 自动重连
+  };
+  ws.onerror = () => {};
+}
+
+// ===== 定时渲染驱动 =====
+function updateData(){
+  // 桥接在线 / 重连中 → 走真实数据渲染（有缓存真实值就显示最后值；重连成功后 onmessage 继续更新）
+  if(dataSource === 'live' || dataSource === 'reconnecting'){ renderLive(); return; }
+
+  // 模拟数据降级（桥接服务未启动 / 断开时）
+  let totalP = 0, totalI = 0, maxV = 0, sumPF = 0;
+  GROUPS.forEach(g => {
+    const emt = genEmtMsg(g);
+    const dlq = genDlqMsg(g);
+    lastEmtMsg = emt; lastDlqMsg = dlq;
+    renderGroupData(g, emt, dlq);
+    totalP += emt.emt_kW; totalI += emt.emt_IA;
+    maxV = Math.max(maxV, emt.emt_VA); sumPF += emt.emt_TPF;
+  });
+  renderSummary(totalP, totalI, maxV, sumPF / 3);
+  pushChartData(totalP);
+  renderMsg();
+}
+
+// ===== 报文展示 =====
+let msgTab = 'emt';
+function switchMsg(t){ msgTab = t; renderMsg(); }
+function renderMsg(){
+  const view = document.getElementById('jsonView');
+  const msg = msgTab === 'emt' ? lastEmtMsg : lastDlqMsg;
+  document.getElementById('tabEmt').className = 'msg-tab' + (msgTab==='emt'?' active':'');
+  document.getElementById('tabDlq').className = 'msg-tab' + (msgTab==='dlq'?' active':'');
+  if(!msg){ view.innerHTML = '<span class="n">等待报文...</span>'; return; }
+  const lines = Object.entries(msg).map(([k,v]) =>
+    `  "<span class="k">${k}</span>": <span class="n">${typeof v==='string'?`"${v}"`:v}</span>`);
+  view.innerHTML = `{\n${lines.join(',\n')}\n}`;
+}
+
+// ===== 事件日志 =====
+const MAX_LOG = 20;
+let eventCount = 0;
+function addEvent(type, icon, text, field){
+  eventCount++;
+  const log = document.getElementById('eventLog');
+  const now = new Date();
+  const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  const item = document.createElement('div');
+  item.className = 'log-item' + (type === 'alert' ? ' alert' : '');
+  item.innerHTML = `
+    <div class="log-icon ${type}">${icon}</div>
+    <div class="log-content">
+      <div class="log-text">${text} ${field?`<span class="f">${field}</span>`:''}</div>
+      <div class="log-time">${ts}</div>
+    </div>`;
+  log.insertBefore(item, log.firstChild);
+  while(log.children.length > MAX_LOG) log.removeChild(log.lastChild);
+  document.getElementById('eventCount').textContent = eventCount + ' 条';
+}
+
+// 数据新鲜度心跳（每5秒刷新三组卡片 + 在线徽章 + src徽章）
+// 【2026-08-31 修改】离线判据统一为时间戳：某组 >60s 未收到数据 → 离线
+const OFFLINE_AFTER_MS = 60 * 1000; // 1分钟未收到数据判定离线
+function freshHeartbeat(){
+  const now = Date.now();
+  GROUPS.forEach(g => {
+    const el = document.getElementById('fresh-' + g.id);
+    const ob = document.getElementById('online-' + g.id);
+    if(!el || !ob) return;
+    const d = liveGroups[g.id];
+    const t = d && d.updatedAt;
+    if(!t){
+      el.textContent = '等待数据'; el.className = 'fresh-chip stale';
+      ob.className = 'online-badge off'; ob.innerHTML = '<span class="dot"></span>离线';
+      return;
+    }
+    const age = Math.round((now - t) / 1000);
+    el.textContent = age < 2 ? '刚刚' : age + 's 前';
+    el.className = 'fresh-chip' + (age > 60 ? ' lost' : age > 20 ? ' stale' : '');
+    // 在线徽章：>60s 未收到数据 → 离线（与 fresh-chip lost 阈值一致）
+    if(age > 60){ ob.className = 'online-badge off'; ob.innerHTML = '<span class="dot"></span>离线'; }
+    else{ ob.className = 'online-badge on'; ob.innerHTML = '<span class="dot"></span>在线'; }
+  });
+  // 顶部 src 徽章心跳：>60s 未收到任何真实报文 → 数据中断（红色），保留最后数据不切模拟
+  const sb = document.getElementById('srcText');
+  if(dataSource === 'live' && lastLiveAt){
+    const age = Math.round((now - lastLiveAt) / 1000);
+    if(age > 60){
+      const b = document.getElementById('srcBadge');
+      b.className = 'src-badge off';
+      sb.textContent = `数据中断 · 最后心跳 ${age}s`;
+    } else {
+      sb.textContent = `真实数据 LIVE · 心跳 ${age}s`;
+    }
+  } else if(dataSource === 'reconnecting'){
+    sb.textContent = '桥接断开 · 重连中';
+  } else if(dataSource === 'connecting'){
+    sb.textContent = '连接桥接服务...';
+  } else {
+    sb.textContent = '模拟数据（桥接离线）';
+  }
+}
+setInterval(freshHeartbeat, 5000);
+
+// ===== 图表 =====
+let powerChart;
+const N = 60;
+const chartLabels = Array(N).fill('');
+const chartData = {
+  total:Array(N).fill(0), g1:Array(N).fill(0), g2:Array(N).fill(0), g3:Array(N).fill(0)
+};
+function initChart(){
+  const ctx = document.getElementById('powerChart').getContext('2d');
+  const gradient = ctx.createLinearGradient(0,0,0,200);
+  gradient.addColorStop(0,'rgba(255,204,0,0.25)');
+  gradient.addColorStop(1,'rgba(255,204,0,0)');
+  powerChart = new Chart(ctx, {
+    type:'line',
+    data:{ labels:chartLabels, datasets:[
+      { label:'1号回路', data:chartData.g1, borderColor:'#00d4ff', backgroundColor:'rgba(0,212,255,0.05)', borderWidth:2, fill:false, tension:0.4, pointRadius:0 },
+      { label:'2号回路', data:chartData.g2, borderColor:'#00ff88', backgroundColor:'rgba(0,255,136,0.05)', borderWidth:2, fill:false, tension:0.4, pointRadius:0 },
+      { label:'3号回路', data:chartData.g3, borderColor:'#aa66ff', backgroundColor:'rgba(170,102,255,0.05)', borderWidth:2, fill:false, tension:0.4, pointRadius:0 },
+      { label:'总功率', data:chartData.total, borderColor:'rgba(255,204,0,0.9)', backgroundColor:gradient, borderWidth:2.5, fill:true, tension:0.4, pointRadius:0 },
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      animation:{duration:600},
+      plugins:{
+        // 【2026-08-31 修改】隐藏 Chart.js 原生图例，改为 HTML 自定义图例（点击更可控）
+        //   原因：Chart.js 内置图例依赖 canvas hitTest，桌面 zoom 缩放 + canvas 事件坐标换算偶发命中失败
+        legend:{ display:false, position:'top', align:'end',
+          labels:{ color:'#8a9bbd', font:{size:11}, boxWidth:12, boxHeight:12, usePointStyle:true }},
+        tooltip:{ backgroundColor:'rgba(10,14,26,0.95)', borderColor:'rgba(64,158,255,0.3)', borderWidth:1,
+          titleColor:'#00d4ff', bodyColor:'#e8f0fe' }
+      },
+      scales:{
+        x:{ grid:{color:'rgba(64,158,255,0.05)'}, ticks:{color:'#5a6a8a', font:{size:10}, maxRotation:0, maxTicksLimit:10} },
+        y:{ grid:{color:'rgba(64,158,255,0.05)'}, ticks:{color:'#5a6a8a', font:{size:10}, callback:v=>v+'kW'}, beginAtZero:true }
+      }
+    }
+  });
+}
+
+function pushChartData(totalP){
+  const now = new Date();
+  const p = n => String(n).padStart(2,'0');
+  chartLabels.push(`${p(now.getMinutes())}:${p(now.getSeconds())}`);
+  chartLabels.shift();
+  // 图表数据源：仅用真实数据；未收到电表报文的组以 0 占位，绝不用模拟值冒充
+  // 【2026-08-31 修改】修复：live 模式混入 genEmtMsg 模拟值会导致"未接负载显示大电流"的假数据
+  const emts = GROUPS.map(g => {
+    const live = liveGroups[g.id] && liveGroups[g.id].meter;
+    return live ? live : { emt_kW: 0, emt_IA: 0, emt_VA: 0, emt_TPF: 0 };
+  });
+  chartData.g1.push(emts[0].emt_kW); chartData.g1.shift();
+  chartData.g2.push(emts[1].emt_kW); chartData.g2.shift();
+  chartData.g3.push(emts[2].emt_kW); chartData.g3.shift();
+  chartData.total.push(totalP); chartData.total.shift();
+  powerChart.update('none');
+  renderLegend();   // 【2026-08-31 新增】同步自定义图例的实时数值与可见状态
+}
+
+// 【2026-08-31 新增】自定义曲线开关：HTML chip 替代 Chart.js 原生图例
+//   数据源单一（chartData），chip 状态由 dataset.hidden 驱动，点击切换可见性
+const CHART_LINES = [
+  { idx:0, label:'1号回路', color:'#00d4ff', getValue:() => chartData.g1[chartData.g1.length-1] },
+  { idx:1, label:'2号回路', color:'#00ff88', getValue:() => chartData.g2[chartData.g2.length-1] },
+  { idx:2, label:'3号回路', color:'#aa66ff', getValue:() => chartData.g3[chartData.g3.length-1] },
+  { idx:3, label:'总功率',   color:'#ffcc00', getValue:() => chartData.total[chartData.total.length-1] },
+];
+
+function initLegend(){
+  const wrap = document.getElementById('chartLegend');
+  if (!wrap) return;
+  wrap.innerHTML = CHART_LINES.map(l => `
+    <div class="legend-chip on" data-idx="${l.idx}" style="--c:${l.color}" title="点击显示/隐藏 ${l.label} 曲线">
+      <span class="dot"></span>
+      <span class="name">${l.label}</span>
+      <span class="value" data-v="${l.idx}">0.00 kW</span>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('.legend-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const idx = +chip.dataset.idx;
+      const chart = powerChart;
+      if (!chart) return;
+      const willShow = chip.classList.contains('off');   // off=已隐藏，点一下要显示
+      chart.setDatasetVisibility(idx, willShow);
+      chip.classList.toggle('on',  willShow);
+      chip.classList.toggle('off', !willShow);
+      chart.update('none');
+    });
+  });
+}
+
+function renderLegend(){
+  if (!powerChart) return;
+  CHART_LINES.forEach(l => {
+    const chip = document.querySelector(`.legend-chip[data-idx="${l.idx}"]`);
+    if (!chip) return;
+    // 同步 Chart.js 真实可见性 → chip 显示状态（防 Chart.js 内部状态漂移）
+    const visible = powerChart.isDatasetVisible(l.idx);
+    chip.classList.toggle('on',  visible);
+    chip.classList.toggle('off', !visible);
+    const v = l.getValue() || 0;
+    const valEl = chip.querySelector('.value');
+    if (valEl) valEl.textContent = (typeof v === 'number' ? v.toFixed(2) : '0.00') + ' kW';
+  });
+}
+
+// ===== 初始化 =====
+buildGroups();
+initChart();
+initLegend();     // 【2026-08-31 新增】自定义曲线开关 chip 初始化（必须在 initChart 之后）
+updateSrcBadge();   // 内部会调用 updateCtrlButtons()，初始 connecting 态按钮禁用
+connectBridge(); // 连接本地桥接服务，接收真实 MQTT 数据
+addEvent('success','✓','MQTT 桥接目标已连接','/wlw_szxn_pdx/#');
+addEvent('info','ℹ','网关在线，IMEI = ' + (liveImei || '自动识别中'),'pdx_post_emt / pdx_post_dlq');
+addEvent('info','📡','等待真实数据上报（协议周期 10s）','device_post');
+
+// 预热图表：真实数据未到时先以模拟值占位
+(function preheat(){
+  for(let i=0;i<30;i++){
+    const totalP = GROUPS.reduce((s,g)=>s+genEmtMsg(g).emt_kW,0);
+    pushChartData(totalP);
+  }
+})();
+
+// 首次刷新 & 定时刷新（10s 渲染驱动；有真实数据走 renderLive，否则模拟降级）
+updateData();
+setInterval(updateData, REPORT_INTERVAL);
+
+// 偶尔产生报警事件（仅模拟模式下生效，真实模式下不干扰）
+setInterval(() => {
+  if(dataSource === 'live') return;
+  if(Math.random() < 0.15){
+    const g = GROUPS[Math.floor(Math.random()*3)];
+    const v = (220 + (Math.random()-0.5)*30).toFixed(1);
+    addEvent('warn','⚠',`${g.name} 电压波动 ${v}V，在正常范围内`, `emt_VA`);
+  }
+}, REPORT_INTERVAL * 3);
+
+// ===== 大屏适配：全屏时整体等比放大（字体/卡片/图表同步缩放） =====
+// 【2026-08-31 新增】PC 全屏字体偏小：按视口宽度整体 zoom 放大。
+//   - <1200px（手机/平板）：保持原样，不受影响
+//   - 1440px 为基准（zoom=1），全屏越宽字体越大，上限 1.5 倍
+//   - maxWidth 与视口联动，避免放大后出现横向滚动条
+function applyDesktopZoom(){
+  const d = document.querySelector('.dashboard');
+  if(!d) return;
+  const vw = window.innerWidth;
+  if(vw < 1200){
+    d.style.zoom = '';
+    d.style.maxWidth = '1920px';
+    return;
+  }
+  const k = Math.min(Math.max(vw / 1440, 1), 1.5);
+  d.style.zoom = k;
+  d.style.maxWidth = (vw / k) + 'px'; // 布局宽=视口/缩放比 → 缩放后视觉宽正好等于视口
+}
+window.addEventListener('resize', applyDesktopZoom);
+applyDesktopZoom();
+</script>
+</body>
+</html>

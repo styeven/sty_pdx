@@ -1,0 +1,8 @@
+{
+  "broker": "mqtt://your-broker-host:port",
+  "user": "your-username",
+  "pass": "your-password",
+  "topic": "/wlw_szxn_pdx/#",
+  "imeiFilter": null,
+  "port": 3010
+}
