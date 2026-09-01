@@ -1,0 +1,20 @@
+{
+  "name": "smart-distribution-board",
+  "version": "1.0.0",
+  "description": "智能配电箱电力数字化看板：MQTT 桥接服务 + WebSocket + 看板前端",
+  "private": true,
+  "main": "bridge-server.js",
+  "scripts": {
+    "start": "node bridge-server.js 3010",
+    "start:3000": "node bridge-server.js 3000",
+    "test:subscribe": "node subscribe-test.js",
+    "test:probe": "node probe-mqtt.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "mqtt": "^5.15.2",
+    "ws": "^8.21.3"
+  }
+}
