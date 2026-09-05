@@ -61,11 +61,25 @@ const ABNORMAL_IA_LIMIT = 1000; // A
 // ---------- 远程控制配置 ----------
 // 【2026-08-31 新增】远程合闸/分闸（协议 V1_260723 控制章节）
 //   控制主题: /wlw_szxn_pdx/{网关IMEI}/server_ctrl
-//   合闸报文: {MsgType:'set_dlq_IO_on',  GWID:网关IMEI, MeterAdr:断路器485地址}
-//   分闸报文: {MsgType:'set_dlq_IO_off', GWID:网关IMEI, MeterAdr:断路器485地址}
+//   合闸报文: {MsgType:'set_dlq_IO_on',  GWID:网关IMEI, MeterAdr:断路器485地址, CommandID:24位随机数}
+//   分闸报文: {MsgType:'set_dlq_IO_off', GWID:网关IMEI, MeterAdr:断路器485地址, CommandID:24位随机数}
 //   MeterAdr 为断路器 485 地址（11/12/13），与上报报文 rs485_addr 一致
+// 【2026-09-05 修改】下发报文增加 CommandID 字段（通信唯一标识）
+//   原因：底层收到控制指令后回复携带相同 CommandID 的报文，据此可关联"这条回复是对哪条指令的确认"；
+//         CommandID 为 24 位随机数，重复概率可忽略
 const GROUP_TO_DLQ_ADDR = { 1: 11, 2: 12, 3: 13 }; // 回路 → 断路器485地址
 const CONTROL_ENABLED = true;  // 控制总开关；现场调试/演练时置 false 可整体禁用
+
+// 【2026-09-05 新增】生成 24 位随机数 CommandID（通信唯一标识，字符串形式，首位 1-9 保证 24 位长度）
+function genCommandId() {
+  let s = String(Math.floor(Math.random() * 9) + 1);
+  for (let i = 0; i < 23; i++) s += Math.floor(Math.random() * 10);
+  return s;
+}
+// 【2026-09-05 新增】下发指令登记表：CommandID → {g, action, addr, ts}
+//   用于与底层回复做关联判断；收到携带相同 CommandID 的报文即视为该指令的确认回复
+const pendingCommands = new Map();
+const CMD_TIMEOUT_MS = 15000;   // 等待底层确认回复的超时时间（ms）
 
 // ---------- 字段换算（原始寄存器值 → 物理量） ----------
 // 【2026-08-31 换算规则说明】
@@ -222,6 +236,19 @@ client.on('close', () => { state.brokerConnected = false; console.log(`[${ts()}]
 client.on('message', (topic, payload) => {
   let msg;
   try { msg = JSON.parse(payload.toString()); } catch (e) { return; }
+  // 【2026-09-05 新增】控制指令回复关联：底层回复携带与下发一致的 CommandID（兼容 CommandID/CommandId 写法）
+  //   匹配到登记表 → 该报文是对某条下发指令的确认回复，登记删除并推送确认事件
+  //   注：若厂商回复使用的字段名不同（如 command_id），只需同步修改下发与这里的取值即可
+  const ackId = msg.CommandID ?? msg.CommandId;
+  if (ackId !== undefined && ackId !== null && pendingCommands.has(String(ackId))) {
+    const cmd = pendingCommands.get(String(ackId));
+    pendingCommands.delete(String(ackId));
+    const span = ((Date.now() - cmd.ts) / 1000).toFixed(1);
+    console.log(`[${ts()}] ✅ [控制] 回路${cmd.g} ${cmd.action === 'on' ? '合闸' : '分闸'} 已确认（CommandID=${ackId}, 回复耗时${span}s, MsgType=${msg.MsgType}）`);
+    pushEvent(`回路${cmd.g} ${cmd.action === 'on' ? '合闸' : '分闸'} 指令已确认 ✅（CommandID=${ackId}，${span}s 内收到回复）`, 'ctrl');
+    broadcast();
+    if (msg.MsgType !== 'pdx_post_dlq') return; // 纯确认报文到此结束；状态类回复继续走下方闸位更新
+  }
   if (msg.MsgType !== 'pdx_post_emt' && msg.MsgType !== 'pdx_post_dlq') return;
   if (IMEI_FILTER && msg.IMEI !== IMEI_FILTER) return;
 
@@ -282,6 +309,8 @@ client.on('message', (topic, payload) => {
 // 【2026-08-31 新增】前端 POST /api/control → 发布 MQTT 控制报文到厂商服务器
 //   请求体: { group: 1, action: 'on'|'off', imei?: '网关IMEI（可选，缺省用已识别的）' }
 //   说明: 控制报文格式按协议 V1_260723 构造；若厂商实际格式有出入，仅需调整此处
+// 【2026-09-05 修改】下发报文增加 CommandID 唯一标识并登记待确认表
+//   原因：底层回复携带相同 CommandID，据此判断回复归属；未确认指令 15s 后提示超时
 function handleControl({ group, action, imei }) {
   if (!CONTROL_ENABLED) return { ok: false, error: '控制功能已禁用（CONTROL_ENABLED=false）' };
   if (!client.connected) return { ok: false, error: 'MQTT 未连接，无法下发控制指令' };
@@ -293,18 +322,21 @@ function handleControl({ group, action, imei }) {
   if (!gwId) return { ok: false, error: '未获取到网关 IMEI，无法构造控制报文' };
 
   const topic = `/wlw_szxn_pdx/${gwId}/server_ctrl`;
+  const cmdId = genCommandId();   // 【2026-09-05 新增】24 位随机通信标识
   const payload = {
     MsgType: action === 'on' ? 'set_dlq_IO_on' : 'set_dlq_IO_off',
     GWID: gwId,
     MeterAdr: addr,
+    CommandID: cmdId,             // 底层回复会携带相同值，用于关联确认
   };
+  pendingCommands.set(cmdId, { g, action, addr, ts: Date.now() });  // 【2026-09-05 新增】登记待确认
   client.publish(topic, JSON.stringify(payload), { qos: 1 }, (err) => {
     if (err) pushEvent(`回路${g} ${action === 'on' ? '合闸' : '分闸'} 指令发布失败: ${err.message}`, 'ctrl');
   });
-  pushEvent(`回路${g} ${action === 'on' ? '合闸' : '分闸'} 指令已下发（MeterAdr=${addr}）`, 'ctrl');
+  pushEvent(`回路${g} ${action === 'on' ? '合闸' : '分闸'} 指令已下发（CommandID=${cmdId}），等待设备确认`, 'ctrl');
   console.log(`[${ts()}] 🎛️ [控制] 回路${g} ${action === 'on' ? '合闸' : '分闸'} → ${topic} ${JSON.stringify(payload)}`);
   broadcast(); // 立即推送给看板（含新事件）
-  return { ok: true, group: g, action, addr, topic, payload };
+  return { ok: true, group: g, action, addr, commandId: cmdId, topic, payload };
 }
 
 // ---------- HTTP + WebSocket ----------
@@ -402,6 +434,10 @@ function snapshot() {
     imei: state.imei,
     packetCount: state.packetCount,
     lastPacketTime: state.lastPacketTime,
+    // 【2026-09-05 新增】待确认的控制指令（CommandID + 等待秒数），便于前端/调试查看
+    pendingCommands: [...pendingCommands.entries()].map(([id, c]) => ({
+      commandId: id, group: c.g, action: c.action, waitSec: Math.round((Date.now() - c.ts) / 1000),
+    })),
     groups: state.groups,
     events: state.events,
   };
@@ -447,3 +483,16 @@ setInterval(() => {
     console.log(`[${ts()}] ⚠️ 已 ${Math.round((Date.now()-state.lastPacketTime)/1000)}s 未收到设备数据`);
   }
 }, 30000);
+
+// 【2026-09-05 新增】控制指令确认超时清理：超过 CMD_TIMEOUT_MS 未收到底层回复 → 事件告警并移除登记
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, cmd] of pendingCommands) {
+    if (now - cmd.ts > CMD_TIMEOUT_MS) {
+      pendingCommands.delete(id);
+      console.log(`[${ts()}] ⚠️ [控制] 回路${cmd.g} ${cmd.action === 'on' ? '合闸' : '分闸'} 指令超时未确认（CommandID=${id}）`);
+      pushEvent(`回路${cmd.g} ${cmd.action === 'on' ? '合闸' : '分闸'} 指令 ${CMD_TIMEOUT_MS / 1000}s 内未收到设备确认回复，请核查现场`, 'alert');
+      broadcast();
+    }
+  }
+}, 5000);
