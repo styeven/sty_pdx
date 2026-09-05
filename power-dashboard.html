@@ -1040,7 +1040,9 @@ function initChart(){
 function pushChartData(totalP){
   const now = new Date();
   const p = n => String(n).padStart(2,'0');
-  chartLabels.push(`${p(now.getMinutes())}:${p(now.getSeconds())}`);
+  // 【2026-09-05 修改】功率曲线时间轴由"分:秒"改为"时:分:秒"（如 12:15:20）
+  //   原因：图表为滚动 60 秒窗口，去掉小时在跨整点/长时间查看时无法定位具体时刻
+  chartLabels.push(`${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`);
   chartLabels.shift();
   // 图表数据源：仅用真实数据；未收到电表报文的组以 0 占位，绝不用模拟值冒充
   // 【2026-08-31 修改】修复：live 模式混入 genEmtMsg 模拟值会导致"未接负载显示大电流"的假数据
